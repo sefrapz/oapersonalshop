@@ -92,7 +92,7 @@ export default function Admin() {
           {tenants.map((t) => (
             <button key={t.id} style={S.tab(sel?.id === t.id)} onClick={() => pick(t)}>{t.name}</button>
           ))}
-          <button style={S.ghost} onClick={() => { setSel(null); setForm({ brand_color: "#7e22ce", order_model: "attest", quota_type: "kr", quota_value: 1500, attest_threshold: 2000 }); setTab("install"); }}>+ Ny kund</button>
+          <button style={S.ghost} onClick={() => { setSel(null); setForm({ name: "", slug: "", logo_url: "", brand_color: "#7e22ce", welcome_text: "Välkommen till er personalshop!", order_model: "attest", quota_type: "kr", quota_value: 1500, attest_threshold: 2000, approver_email: "", contact_email: "", footer_lines: "" }); setTab("install"); }}>+ Ny kund</button>
         </div>
       </div>
 
