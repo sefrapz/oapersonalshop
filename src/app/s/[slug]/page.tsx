@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 const kr = (n: number) => new Intl.NumberFormat("sv-SE").format(n) + " kr";
+const GLASS = "bg-white/[0.055] border border-white/10 backdrop-blur-xl";
 
 export default function Shop() {
   const { slug } = useParams<{ slug: string }>();
@@ -51,7 +52,7 @@ export default function Shop() {
       if (hit) return c.map((i) => (i === hit ? { ...i, qty: i.qty + 1 } : i));
       return [...c, { productId: p.id, size, qty: 1 }];
     });
-    flash(p.name + " tillagd");
+    flash(p.name + " tillagd i varukorgen");
   }
 
   async function placeOrder() {
@@ -64,7 +65,6 @@ export default function Shop() {
     setBusy(false);
     if (j.error) { flash(j.error); return; }
     setDone(j); setCart([]); setNote(""); setView("done");
-    // uppdatera kvot
     fetch(`/api/shop/config?slug=${slug}`).then((r) => r.json()).then(setCfg);
   }
 
@@ -73,65 +73,89 @@ export default function Shop() {
     setMyOrders(j.orders || []); setView("orders");
   }
 
-  const S: any = {
-    page: { maxWidth: 960, margin: "0 auto", padding: "0 18px 60px" },
-    card: { background: "#fff", border: "1px solid rgba(0,0,0,.1)", borderRadius: 24, padding: 24 },
-    btn: { background: brand, color: "#fff", border: 0, borderRadius: 999, padding: "12px 24px", fontWeight: 600, fontSize: 14, cursor: "pointer" },
-    ghost: { background: "#fff", border: "1px solid rgba(0,0,0,.15)", borderRadius: 999, padding: "10px 20px", fontWeight: 600, fontSize: 13, cursor: "pointer" },
-    inp: { width: "100%", border: "1px solid rgba(0,0,0,.15)", borderRadius: 12, padding: "12px 14px", fontSize: 14, boxSizing: "border-box" as const },
-    label: { fontSize: 10, textTransform: "uppercase" as const, letterSpacing: 1.5, color: "rgba(0,0,0,.4)", fontWeight: 700 },
-  };
-
-  if (err) return <div style={{ ...S.page, paddingTop: 80, textAlign: "center" }}><h1>Butiken hittades inte</h1><p style={{ color: "#666" }}>{err}</p></div>;
-  if (!cfg) return <div style={{ ...S.page, paddingTop: 80, textAlign: "center", color: "#888" }}>Laddar…</div>;
-
-  const Header = (
-    <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "22px 0", flexWrap: "wrap", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {cfg.tenant.logo_url
-          ? <img src={cfg.tenant.logo_url} alt="" style={{ height: 38, borderRadius: 10 }} />
-          : <span style={{ width: 40, height: 40, borderRadius: 12, background: brand, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 17 }}>{cfg.tenant.name[0]}</span>}
-        <div>
-          <p style={{ margin: 0, fontWeight: 600, fontSize: 16 }}>{cfg.tenant.name}</p>
-          <p style={{ margin: 0, fontSize: 11, color: "rgba(0,0,0,.45)" }}>Personalshop</p>
-        </div>
+  // ===== Skal med aurora-bakgrund =====
+  function Shell({ children }: { children: React.ReactNode }) {
+    return (
+      <div className="min-h-screen bg-[#0a0d12] text-white relative overflow-hidden" style={{ fontFamily: "'Inter',sans-serif" }}>
+        <div className="pointer-events-none fixed w-[480px] h-[480px] rounded-full opacity-25 blur-[100px] -top-32 -left-24" style={{ background: brand }} />
+        <div className="pointer-events-none fixed w-[420px] h-[420px] rounded-full opacity-20 blur-[100px] top-1/3 -right-32" style={{ background: "#2dd4bf" }} />
+        <div className="pointer-events-none fixed w-[460px] h-[460px] rounded-full opacity-20 blur-[110px] -bottom-40 left-1/4" style={{ background: "#8b5cf6" }} />
+        <div className="relative z-10 max-w-[1020px] mx-auto px-5 pb-16">{children}</div>
+        {toast && (
+          <div className="toast fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white text-[#0a0d12] rounded-full px-6 py-3 text-[13px] font-semibold shadow-2xl">
+            {toast}
+          </div>
+        )}
+        <p className="relative z-10 text-center text-[11px] text-white/25 pb-6">
+          Drivs av <a href="https://oasystems.se" className="underline hover:text-white/50">OA Systems</a>
+        </p>
       </div>
-      {cfg.loggedIn && (
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          {cfg.quota && (
-            <span style={{ fontSize: 12, background: "#fff", border: "1px solid rgba(0,0,0,.1)", borderRadius: 999, padding: "8px 14px" }}>
-              Kvot kvar: <strong>{cfg.quota.left} {cfg.quota.unit}</strong> av {cfg.quota.total}
-            </span>
-          )}
-          <button style={S.ghost} onClick={loadOrders}>Mina ordrar</button>
-          <button style={{ ...S.btn, position: "relative" }} onClick={() => setView("cart")}>
-            Varukorg{inCart > 0 ? ` (${inCart})` : ""}
-          </button>
+    );
+  }
+
+  function Header() {
+    return (
+      <header className="flex items-center justify-between gap-3 flex-wrap py-6">
+        <div className="flex items-center gap-3.5">
+          {cfg.tenant.logo_url
+            ? <img src={cfg.tenant.logo_url} alt="" className="h-10 rounded-xl" />
+            : <span className="w-11 h-11 rounded-2xl grotesk font-bold text-[18px] flex items-center justify-center text-[#0a0d12]" style={{ background: `linear-gradient(135deg, ${brand}, #2dd4bf)` }}>{cfg.tenant.name[0]}</span>}
+          <div>
+            <p className="grotesk font-semibold text-[17px] leading-tight">{cfg.tenant.name}</p>
+            <p className="text-[10.5px] uppercase tracking-[0.18em] text-white/40">Personalshop</p>
+          </div>
         </div>
-      )}
-    </header>
+        {cfg.loggedIn && (
+          <div className="flex gap-2.5 items-center flex-wrap">
+            {cfg.quota && (
+              <span className={`${GLASS} rounded-full px-4 py-2 text-[12px] text-white/70`}>
+                Kvot kvar: <strong className="text-white">{cfg.quota.left} {cfg.quota.unit}</strong> <span className="text-white/40">av {cfg.quota.total}</span>
+              </span>
+            )}
+            <button onClick={loadOrders} className={`${GLASS} rounded-full px-4 py-2 text-[12.5px] font-semibold hover:bg-white/10 transition-colors`}>Mina ordrar</button>
+            <button onClick={() => setView("cart")} className="rounded-full px-5 py-2 text-[12.5px] font-semibold text-white transition-transform hover:scale-[1.03]" style={{ background: brand }}>
+              Varukorg{inCart > 0 ? ` · ${inCart}` : ""}
+            </button>
+          </div>
+        )}
+      </header>
+    );
+  }
+
+  if (err) return (
+    <Shell><div className="pt-32 text-center pop">
+      <h1 className="grotesk text-[26px] font-semibold">Butiken hittades inte</h1>
+      <p className="text-white/45 text-[13.5px] mt-2">{err}</p>
+    </div></Shell>
   );
+  if (!cfg) return <Shell><p className="pt-32 text-center text-white/40 text-[14px]">Laddar…</p></Shell>;
 
   // ===== Inloggning =====
   if (!cfg.loggedIn) {
     return (
-      <div style={S.page}>
-        {Header}
-        <div style={{ ...S.card, maxWidth: 440, margin: "60px auto 0", textAlign: "center" }}>
-          <span style={{ width: 52, height: 52, borderRadius: 16, background: brand, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 20, marginBottom: 16 }}>{cfg.tenant.name[0]}</span>
-          <h1 style={{ fontSize: 22, margin: "0 0 8px", letterSpacing: "-0.01em" }}>{cfg.tenant.welcome_text}</h1>
+      <Shell>
+        <Header />
+        <div className={`pop ${GLASS} rounded-[28px] p-9 max-w-[440px] mx-auto mt-16 text-center`}>
+          <span className="inline-flex w-14 h-14 rounded-2xl grotesk font-bold text-[22px] items-center justify-center text-[#0a0d12] mb-5" style={{ background: `linear-gradient(135deg, ${brand}, #2dd4bf)` }}>{cfg.tenant.name[0]}</span>
+          <h1 className="grotesk text-[24px] font-semibold leading-snug">{cfg.tenant.welcome_text}</h1>
           {!linkSent ? (<>
-            <p style={{ fontSize: 13.5, color: "rgba(0,0,0,.55)", margin: "0 0 20px" }}>Ange din jobbmejl så skickar vi en inloggningslänk — inga lösenord.</p>
-            <input style={S.inp} placeholder="fornamn.efternamn@foretaget.se" value={email}
-              onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && requestLink()} />
-            <button style={{ ...S.btn, width: "100%", marginTop: 12 }} onClick={requestLink}>Skicka inloggningslänk</button>
+            <p className="text-[13px] text-white/50 font-light mt-3 mb-6">Ange din jobbmejl så skickar vi en inloggningslänk — inga lösenord att hålla reda på.</p>
+            <input
+              className="w-full bg-white/[0.06] border border-white/15 rounded-2xl px-5 py-3.5 text-[14px] text-white placeholder-white/30 focus:outline-none focus:border-white/40"
+              placeholder="fornamn.efternamn@foretaget.se"
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && requestLink()}
+            />
+            <button onClick={requestLink} className="w-full mt-3 py-4 rounded-full font-semibold text-[14px] text-white transition-transform hover:scale-[1.01]" style={{ background: brand }}>
+              Skicka inloggningslänk
+            </button>
           </>) : (
-            <p style={{ fontSize: 14, color: "rgba(0,0,0,.6)", background: "#f5f0fb", borderRadius: 14, padding: "16px 18px" }}>
+            <p className="text-[13.5px] text-white/70 bg-white/[0.06] border border-white/10 rounded-2xl px-5 py-4 mt-5 leading-relaxed">
               ✉️ Om adressen finns registrerad har en länk skickats.<br />Kolla inkorgen — länken gäller i 15 minuter.
             </p>
           )}
         </div>
-      </div>
+      </Shell>
     );
   }
 
@@ -139,45 +163,47 @@ export default function Shop() {
   if (view === "done" && done) {
     const attested = done.status === "pending_attest";
     return (
-      <div style={S.page}>
-        {Header}
-        <div style={{ ...S.card, maxWidth: 460, margin: "50px auto 0", textAlign: "center" }}>
-          <span style={{ width: 56, height: 56, borderRadius: "50%", background: attested ? "#d97706" : "#15803d", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 24, marginBottom: 16 }}>{attested ? "⏳" : "✓"}</span>
-          <h1 style={{ fontSize: 21, margin: "0 0 8px" }}>{attested ? "Order skickad för attest" : "Tack för din beställning!"}</h1>
-          <p style={{ fontSize: 13.5, color: "rgba(0,0,0,.55)" }}>
-            Order <strong>#{done.ticket}</strong>{attested ? " väntar på godkännande — du får mejl när den är hanterad." : " är mottagen och behandlas. Du meddelas när den är klar."}
+      <Shell>
+        <Header />
+        <div className={`pop ${GLASS} rounded-[28px] p-9 max-w-[460px] mx-auto mt-12 text-center`}>
+          <span className="inline-flex w-14 h-14 rounded-full items-center justify-center text-[24px] mb-4" style={{ background: attested ? "#d97706" : "#16a34a" }}>{attested ? "⏳" : "✓"}</span>
+          <h1 className="grotesk text-[23px] font-semibold">{attested ? "Skickad för attest" : "Tack för din beställning!"}</h1>
+          <p className="text-[13.5px] text-white/55 font-light mt-2">
+            Order <strong className="text-white">#{done.ticket}</strong>{attested ? " väntar på godkännande — du får mejl när den är hanterad." : " är mottagen och behandlas. Du meddelas när den är klar."}
           </p>
-          <button style={{ ...S.btn, marginTop: 16 }} onClick={() => setView("shop")}>Tillbaka till butiken</button>
+          <button onClick={() => setView("shop")} className="mt-6 px-7 py-3 rounded-full font-semibold text-[13.5px] text-white transition-transform hover:scale-[1.02]" style={{ background: brand }}>
+            Tillbaka till butiken
+          </button>
         </div>
-      </div>
+      </Shell>
     );
   }
 
   // ===== Mina ordrar =====
   if (view === "orders") {
-    const badge: any = { processing: ["Behandlas", "#2563eb"], ready: ["Klar att hämta", "#15803d"], pending_attest: ["Väntar attest", "#d97706"], rejected: ["Avslagen", "#b91c1c"], approved: ["Godkänd", "#15803d"] };
+    const badge: any = { processing: ["Behandlas", "#38bdf8"], ready: ["Klar att hämta", "#4ade80"], pending_attest: ["Väntar attest", "#fbbf24"], rejected: ["Avslagen", "#f87171"], approved: ["Godkänd", "#4ade80"] };
     return (
-      <div style={S.page}>
-        {Header}
-        <h1 style={{ fontSize: 24, letterSpacing: "-0.01em" }}>Mina ordrar</h1>
-        <div style={{ display: "grid", gap: 12 }}>
-          {myOrders.length === 0 && <p style={{ color: "#777", fontSize: 14 }}>Inga ordrar än.</p>}
+      <Shell>
+        <Header />
+        <h1 className="grotesk text-[26px] font-semibold mt-4 mb-6 pop">Mina ordrar</h1>
+        <div className="space-y-3 max-w-[640px]">
+          {myOrders.length === 0 && <p className="text-white/40 text-[13.5px]">Inga ordrar än.</p>}
           {myOrders.map((o) => (
-            <div key={o.id} style={{ ...S.card, padding: "16px 20px", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div>
-                <strong style={{ fontSize: 14 }}>#{o.ticket}</strong>
-                <span style={{ fontSize: 12, color: "#888", marginLeft: 10 }}>{new Date(o.created_at).toLocaleDateString("sv-SE")}</span>
-                <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "rgba(0,0,0,.55)" }}>{o.items.join(", ")}</p>
+            <div key={o.id} className={`pop ${GLASS} rounded-2xl px-5 py-4 flex justify-between gap-4 flex-wrap`}>
+              <div className="min-w-0">
+                <span className="grotesk font-semibold text-[14.5px]">#{o.ticket}</span>
+                <span className="text-[11.5px] text-white/35 ml-2.5">{new Date(o.created_at).toLocaleDateString("sv-SE")}</span>
+                <p className="text-[12.5px] text-white/55 mt-1 truncate">{o.items.join(", ")}</p>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <strong style={{ fontSize: 14 }}>{kr(o.total)}</strong>
-                <p style={{ margin: "4px 0 0", fontSize: 12, fontWeight: 600, color: (badge[o.status] || ["", "#666"])[1] }}>{(badge[o.status] || [o.status])[0]}</p>
+              <div className="text-right">
+                <p className="grotesk font-semibold text-[14.5px]">{kr(o.total)}</p>
+                <p className="text-[11.5px] font-semibold mt-1" style={{ color: (badge[o.status] || ["", "#999"])[1] }}>{(badge[o.status] || [o.status])[0]}</p>
               </div>
             </div>
           ))}
         </div>
-        <button style={{ ...S.ghost, marginTop: 18 }} onClick={() => setView("shop")}>← Tillbaka till butiken</button>
-      </div>
+        <button onClick={() => setView("shop")} className={`${GLASS} rounded-full px-5 py-2.5 text-[12.5px] font-semibold mt-6 hover:bg-white/10 transition-colors`}>← Tillbaka till butiken</button>
+      </Shell>
     );
   }
 
@@ -186,86 +212,108 @@ export default function Shop() {
     const total = totalOf(cart);
     const needsAttest = cfg.tenant.order_model === "attest" && (cfg.tenant.attest_threshold === 0 || total > cfg.tenant.attest_threshold);
     return (
-      <div style={S.page}>
-        {Header}
-        <h1 style={{ fontSize: 24, letterSpacing: "-0.01em" }}>Varukorg</h1>
-        {cart.length === 0 ? <p style={{ color: "#777" }}>Tom. <button style={{ ...S.ghost, marginLeft: 8 }} onClick={() => setView("shop")}>Till butiken</button></p> : (
-          <div style={{ display: "grid", gap: 12, maxWidth: 560 }}>
+      <Shell>
+        <Header />
+        <h1 className="grotesk text-[26px] font-semibold mt-4 mb-6 pop">Varukorg</h1>
+        {cart.length === 0 ? (
+          <div className="pop text-white/45 text-[14px]">
+            Varukorgen är tom.
+            <button onClick={() => setView("shop")} className={`${GLASS} rounded-full px-5 py-2.5 text-[12.5px] font-semibold text-white ml-3 hover:bg-white/10 transition-colors`}>Till butiken</button>
+          </div>
+        ) : (
+          <div className="space-y-3 max-w-[600px]">
             {cart.map((i, idx) => {
               const p = products.find((x: any) => x.id === i.productId);
               return (
-                <div key={idx} style={{ ...S.card, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
-                  <span style={{ width: 44, height: 44, borderRadius: 12, background: p?.image_url ? `url(${p.image_url}) center/cover` : (p?.color || "#334155"), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flexShrink: 0 }}>{!p?.image_url && p?.name[0]}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 600, fontSize: 13.5 }}>{p?.name}{i.size ? " · " + i.size : ""}</p>
-                    <p style={{ margin: 0, fontSize: 12, color: "#888" }}>{kr(p?.price || 0)}</p>
+                <div key={idx} className={`pop ${GLASS} rounded-2xl px-5 py-3.5 flex items-center gap-4`}>
+                  <span className="w-12 h-12 rounded-xl flex items-center justify-center grotesk font-bold text-[16px] text-[#0a0d12] flex-shrink-0"
+                    style={p?.image_url ? { background: `url(${p.image_url}) center/cover` } : { background: `linear-gradient(135deg, ${p?.color || "#334155"}, ${brand})` }}>
+                    {!p?.image_url && p?.name[0]}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13.5px] font-semibold truncate">{p?.name}{i.size ? <span className="text-white/45"> · {i.size}</span> : ""}</p>
+                    <p className="text-[12px] text-white/40">{kr(p?.price || 0)}</p>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button style={{ ...S.ghost, padding: "4px 11px" }} onClick={() => setCart((c) => c.map((x, xi) => xi === idx ? { ...x, qty: x.qty - 1 } : x).filter((x) => x.qty > 0))}>−</button>
-                    <span style={{ fontSize: 13, width: 18, textAlign: "center" }}>{i.qty}</span>
-                    <button style={{ ...S.ghost, padding: "4px 10px" }} onClick={() => setCart((c) => c.map((x, xi) => xi === idx ? { ...x, qty: x.qty + 1 } : x))}>+</button>
+                  <div className="flex items-center gap-2.5">
+                    <button onClick={() => setCart((c) => c.map((x, xi) => xi === idx ? { ...x, qty: x.qty - 1 } : x).filter((x) => x.qty > 0))}
+                      className="w-7 h-7 rounded-full border border-white/20 text-[14px] leading-none hover:bg-white/10 transition-colors">−</button>
+                    <span className="text-[13.5px] w-5 text-center">{i.qty}</span>
+                    <button onClick={() => setCart((c) => c.map((x, xi) => xi === idx ? { ...x, qty: x.qty + 1 } : x))}
+                      className="w-7 h-7 rounded-full border border-white/20 text-[14px] leading-none hover:bg-white/10 transition-colors">+</button>
                   </div>
                 </div>
               );
             })}
-            <div style={S.card}>
-              <p style={S.label}>Kostnadsställe / avdelning (frivilligt)</p>
-              <input style={{ ...S.inp, margin: "6px 0 14px" }} value={costCenter} onChange={(e) => setCostCenter(e.target.value)} placeholder="T.ex. Serviceteam" />
-              <p style={S.label}>Meddelande (frivilligt)</p>
-              <input style={{ ...S.inp, margin: "6px 0 16px" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="T.ex. ersätter trasig jacka" />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+            <div className={`pop ${GLASS} rounded-[24px] p-6`}>
+              <label className="text-[10px] uppercase tracking-[0.18em] text-white/40 font-bold">Kostnadsställe / avdelning (frivilligt)</label>
+              <input className="w-full bg-white/[0.06] border border-white/15 rounded-xl px-4 py-3 text-[13.5px] text-white placeholder-white/25 focus:outline-none focus:border-white/40 mt-1.5 mb-4"
+                value={costCenter} onChange={(e) => setCostCenter(e.target.value)} placeholder="T.ex. Serviceteam" />
+              <label className="text-[10px] uppercase tracking-[0.18em] text-white/40 font-bold">Meddelande (frivilligt)</label>
+              <input className="w-full bg-white/[0.06] border border-white/15 rounded-xl px-4 py-3 text-[13.5px] text-white placeholder-white/25 focus:outline-none focus:border-white/40 mt-1.5 mb-5"
+                value={note} onChange={(e) => setNote(e.target.value)} placeholder="T.ex. ersätter trasig jacka" />
+              <div className="flex justify-between grotesk text-[17px] font-semibold mb-3">
                 <span>Totalt</span><span>{kr(total)}</span>
               </div>
-              {needsAttest && <p style={{ fontSize: 12, color: "#d97706", margin: "0 0 10px" }}>⏳ Ordern skickas för attest till er inköpsansvarige innan den behandlas.</p>}
-              {cfg.quota && <p style={{ fontSize: 12, color: "rgba(0,0,0,.5)", margin: "0 0 10px" }}>Kvot kvar efter köp: {cfg.quota.unit === "kr" ? Math.max(0, cfg.quota.left - total) + " kr" : Math.max(0, cfg.quota.left - inCart) + " plagg"}</p>}
-              <button style={{ ...S.btn, width: "100%", opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={placeOrder}>{busy ? "Skickar…" : "Skicka beställning"}</button>
+              {needsAttest && <p className="text-[12px] text-amber-300/90 mb-3">⏳ Ordern skickas för attest till er inköpsansvarige innan den behandlas.</p>}
+              {cfg.quota && <p className="text-[12px] text-white/45 mb-3">Kvot kvar efter köp: {cfg.quota.unit === "kr" ? Math.max(0, cfg.quota.left - total) + " kr" : Math.max(0, cfg.quota.left - inCart) + " plagg"}</p>}
+              <button disabled={busy} onClick={placeOrder}
+                className="w-full py-4 rounded-full font-semibold text-[14px] text-white transition-transform hover:scale-[1.01] disabled:opacity-50"
+                style={{ background: brand }}>
+                {busy ? "Skickar…" : "Skicka beställning"}
+              </button>
             </div>
-            <button style={S.ghost} onClick={() => setView("shop")}>← Fortsätt handla</button>
+            <button onClick={() => setView("shop")} className={`${GLASS} rounded-full px-5 py-2.5 text-[12.5px] font-semibold hover:bg-white/10 transition-colors`}>← Fortsätt handla</button>
           </div>
         )}
-        {toast && <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#111", color: "#fff", borderRadius: 999, padding: "10px 22px", fontSize: 13 }}>{toast}</div>}
-      </div>
+      </Shell>
     );
   }
 
   // ===== Butik =====
   return (
-    <div style={S.page}>
-      {Header}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 14 }}>
-        {products.map((p: any) => <ProductCard key={p.id} p={p} brand={brand} onAdd={add} />)}
-        {products.length === 0 && <p style={{ color: "#777" }}>Inga produkter upplagda än.</p>}
+    <Shell>
+      <Header />
+      <div className="pop mt-2 mb-8">
+        <h1 className="grotesk text-[28px] md:text-[36px] font-semibold leading-tight">{cfg.tenant.welcome_text}</h1>
+        <p className="text-white/45 text-[13.5px] font-light mt-1.5">Välj dina plagg — beställningen hanteras enligt ert företags regler, helt automatiskt.</p>
       </div>
-      {toast && <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#111", color: "#fff", borderRadius: 999, padding: "10px 22px", fontSize: 13, zIndex: 50 }}>{toast}</div>}
-      <p style={{ textAlign: "center", fontSize: 11, color: "rgba(0,0,0,.35)", marginTop: 40 }}>Drivs av <a href="https://oasystems.se" style={{ color: "inherit" }}>OA Systems</a></p>
-    </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {products.map((p: any, i: number) => <ProductCard key={p.id} p={p} brand={brand} onAdd={add} delay={i * 60} />)}
+        {products.length === 0 && <p className="text-white/40 text-[13.5px] col-span-full">Inga produkter upplagda än.</p>}
+      </div>
+    </Shell>
   );
 }
 
-function ProductCard({ p, brand, onAdd }: { p: any; brand: string; onAdd: (p: any, size: string) => void }) {
+function ProductCard({ p, brand, onAdd, delay }: { p: any; brand: string; onAdd: (p: any, size: string) => void; delay: number }) {
   const [size, setSize] = useState("");
   return (
-    <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,.1)", borderRadius: 20, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <div style={{ aspectRatio: "1", background: p.image_url ? `url(${p.image_url}) center/cover` : p.color, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.9)", fontSize: 42, fontWeight: 700 }}>
+    <div className={`pop ${GLASS} rounded-[22px] overflow-hidden flex flex-col hover:border-white/25 transition-colors`} style={{ animationDelay: delay + "ms" }}>
+      <div className="aspect-square flex items-center justify-center grotesk text-[44px] font-bold text-[#0a0d12]"
+        style={p.image_url ? { background: `url(${p.image_url}) center/cover` } : { background: `linear-gradient(135deg, ${p.color}, ${brand})` }}>
         {!p.image_url && p.name[0]}
       </div>
-      <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+      <div className="p-4 flex flex-col gap-2.5 flex-1">
         <div>
-          <p style={{ margin: 0, fontSize: 9.5, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(0,0,0,.4)", fontWeight: 700 }}>{p.category}</p>
-          <p style={{ margin: "3px 0 0", fontWeight: 600, fontSize: 14 }}>{p.name}</p>
+          <p className="text-[9.5px] uppercase tracking-[0.18em] text-white/35 font-bold">{p.category}</p>
+          <p className="text-[14px] font-semibold mt-0.5 leading-snug">{p.name}</p>
         </div>
         {p.sizes?.length > 0 && (
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+          <div className="flex gap-1.5 flex-wrap">
             {p.sizes.map((s: string) => (
               <button key={s} onClick={() => setSize(s)}
-                style={{ border: "1px solid " + (size === s ? brand : "rgba(0,0,0,.15)"), background: size === s ? brand : "#fff", color: size === s ? "#fff" : "#333", borderRadius: 8, padding: "3px 9px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}>{s}</button>
+                className="rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition-colors"
+                style={size === s ? { background: brand, borderColor: brand, color: "#fff" } : { borderColor: "rgba(255,255,255,.2)", color: "rgba(255,255,255,.65)" }}>
+                {s}
+              </button>
             ))}
           </div>
         )}
-        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <strong style={{ fontSize: 14 }}>{p.price > 0 ? kr(p.price) : "Ingår"}</strong>
+        <div className="mt-auto flex items-center justify-between pt-1">
+          <span className="grotesk font-semibold text-[14.5px]">{p.price > 0 ? kr(p.price) : "Ingår"}</span>
           <button onClick={() => onAdd(p, size)}
-            style={{ background: brand, color: "#fff", border: 0, borderRadius: 999, width: 32, height: 32, fontSize: 17, cursor: "pointer", lineHeight: 1 }}>+</button>
+            className="w-9 h-9 rounded-full text-white text-[18px] leading-none transition-transform hover:scale-110"
+            style={{ background: brand }}>+</button>
         </div>
       </div>
     </div>
