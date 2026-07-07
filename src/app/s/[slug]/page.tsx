@@ -44,9 +44,6 @@ export default function Shop() {
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [toastMsg, setToastMsg] = useState("");
   // ordermodal
-  const [mP, setMP] = useState<any>(null);
-  const [mSize, setMSize] = useState("");
-  const [mQty, setMQty] = useState(1);
   const [placing, setPlacing] = useState(false);
   // AI
   const [aiOpen, setAiOpen] = useState(false);
@@ -57,6 +54,14 @@ export default function Shop() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"pop" | "namn" | "pris">("pop");
   const [favOnly, setFavOnly] = useState(false);
+  // varukorg: rader { product, size, qty } — samma produkt+storlek slås ihop
+  const [cart, setCart] = useState<{ product: any; size: string; qty: number }[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [note, setNote] = useState("");
+  // produktsida (fullskärm i appen)
+  const [detail, setDetail] = useState<any>(null);
+  const [dSize, setDSize] = useState("");
+  const [dQty, setDQty] = useState(1);
 
   const t = cfg?.tenant;
   const brand = t?.brand_color || "#7e22ce";
@@ -128,27 +133,47 @@ export default function Shop() {
   const quota = cfg?.quota; // { left, unit, total } | null
   const quotaPct = quota ? Math.max(0, Math.min(1, quota.left / quota.total)) : 0;
 
-  function openModal(p: any) {
-    setMP(p); setMSize(p.sizes?.[Math.min(2, (p.sizes?.length || 1) - 1)] || ""); setMQty(1);
+  function openDetail(p: any) {
+    setDetail(p); setDSize(p.sizes?.[Math.min(2, (p.sizes?.length || 1) - 1)] || ""); setDQty(1);
+    window.scrollTo({ top: 0, behavior: "instant" as any });
   }
-  async function placeOrder() {
-    if (placing || !mP) return;
-    // Klientkoll (servern är sanningen — atomär kvot sedan revisionen)
+  const cartCount = cart.reduce((s, l) => s + l.qty, 0);
+  const cartTotal = cart.reduce((s, l) => s + l.product.price * l.qty, 0);
+  const cartItems = cart.reduce((s, l) => s + l.qty, 0);
+
+  function addToCart(p: any, size: string, qty: number) {
+    if (p.sizes?.length && !size) { toast("Välj en storlek först."); return false; }
+    setCart((prev) => {
+      const i = prev.findIndex((l) => l.product.id === p.id && l.size === size);
+      if (i >= 0) { const n = prev.slice(); n[i] = { ...n[i], qty: Math.min(50, n[i].qty + qty) }; return n; }
+      return [...prev, { product: p, size, qty }];
+    });
+    toast(`${p.name}${size ? " (" + size + ")" : ""} lades i varukorgen ✓`);
+    return true;
+  }
+  function setLineQty(idx: number, d: number) {
+    setCart((prev) => prev.map((l, i) => i === idx ? { ...l, qty: Math.max(1, Math.min(50, l.qty + d)) } : l));
+  }
+  function removeLine(idx: number) { setCart((prev) => prev.filter((_, i) => i !== idx)); }
+
+  async function checkout() {
+    if (placing || cart.length === 0) return;
+    // Klientkoll (servern är sanningen — atomär kvot)
     if (quota) {
-      const need = quota.unit === "plagg" ? mQty : mP.price * mQty;
+      const need = quota.unit === "plagg" ? cartItems : cartTotal;
       if (need > quota.left) {
-        setMP(null);
-        toast(`Kvoten räcker inte — ${quota.left} ${quota.unit} kvar. Prata med din chef om påfyllnad.`);
+        toast(`Kvoten räcker inte — ${quota.left} ${quota.unit} kvar, korgen kräver ${need} ${quota.unit}.`);
         return;
       }
     }
     setPlacing(true);
     const j = await fetch("/api/shop/order", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: [{ productId: mP.id, size: mSize || undefined, qty: mQty }] }),
+      body: JSON.stringify({ items: cart.map((l) => ({ productId: l.product.id, size: l.size || undefined, qty: l.qty })), note: note || undefined }),
     }).then((r) => r.json());
-    setPlacing(false); setMP(null);
+    setPlacing(false);
     if (j.error) { toast(j.error); return; }
+    setCart([]); setNote(""); setCartOpen(false);
     toast(j.status === "pending_attest"
       ? `Order #${j.ticket} skickad för attest ✓ — du meddelas via mejl`
       : `Order #${j.ticket} lagd ✓ — direkt till behandling`);
@@ -276,6 +301,11 @@ export default function Shop() {
             )}
             <button onClick={() => { setView("shop"); setTimeout(() => document.getElementById("myorders")?.scrollIntoView({ behavior: "smooth" }), 50); }}
               className={`${GLASS} rounded-full px-4 py-2 text-[12.5px] font-semibold hover:bg-white/10 transition-colors`}>Mina ordrar</button>
+            <button onClick={() => setCartOpen(true)}
+              className="relative rounded-full px-4 py-2 text-[12.5px] font-bold text-[#0b0e13] hover:opacity-90 transition-opacity" style={{ background: brand }}>
+              🛒 Varukorg
+              {cartCount > 0 && <span className="absolute -top-1.5 -right-1.5 bg-[#0b0e13] text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">{cartCount}</span>}
+            </button>
             <button onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); location.reload(); }}
               className={`${GLASS} rounded-full px-4 py-2 text-[12.5px] font-semibold text-white/50 hover:bg-white/10 hover:text-white transition-colors`}>Logga ut</button>
           </div>
@@ -394,7 +424,7 @@ export default function Shop() {
               {shown.length === 0 && <div className={GLASS + " p-10 text-center text-white/40 text-[13px]"} style={{ borderRadius: "var(--radius)" }}>{products.length === 0 ? "Inga produkter upplagda ännu — hör med er butiksansvarige." : favOnly ? "Du har inga favoriter i den här kategorin än — tryck på hjärtat på en produkt." : "Inget matchade — prova en annan kategori eller sökning."}</div>}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                 {shown.map((p: any) => (
-                  <div key={p.id} onClick={() => openModal(p)}
+                  <div key={p.id} onClick={() => openDetail(p)}
                     className={GLASS + " p-3.5 group cursor-pointer hover:bg-white/[0.09] hover:border-white/20 hover:-translate-y-1 transition-all duration-300"}
                     style={{ borderRadius: "var(--radius)" }}>
                     <div className="relative">
@@ -411,7 +441,7 @@ export default function Shop() {
                     {p.sizes?.length > 0 && <p className="text-[10.5px] text-white/30 mt-1">{p.sizes.length} storlekar</p>}
                     <div className="flex items-center justify-between mt-2.5">
                       <span className="grotesk text-[14px]">{p.price > 0 ? kr(p.price) : quota?.unit === "plagg" ? "1 plagg" : "Ingår"}</span>
-                      <span className="rounded-full px-4 py-1.5 text-[11.5px] font-bold text-[#0b0e13] group-hover:opacity-90 transition-opacity" style={{ background: brand }}>Beställ</span>
+                      <span className="rounded-full px-4 py-1.5 text-[11.5px] font-bold text-[#0b0e13] group-hover:opacity-90 transition-opacity" style={{ background: brand }}>Visa</span>
                     </div>
                   </div>
                 ))}
@@ -494,43 +524,160 @@ export default function Shop() {
         </div>
       )}
 
-      {/* ===== Ordermodal ===== */}
-      {mP && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMP(null)} />
-          <div className="relative w-full max-w-[420px] p-6 border border-white/10 rounded-3xl backdrop-blur-xl" style={{ background: "rgba(16,20,28,.92)" }}>
-            <div className="flex gap-4 items-center mb-5">
-              <GarmentArt p={mP} className="w-20 h-20 flex-shrink-0" />
-              <div>
-                <p className="grotesk font-semibold text-[17px]">{mP.name}</p>
-                <p className="text-[12px] text-white/45">{mP.category}</p>
-                <p className="grotesk text-[15px] mt-0.5">{mP.price > 0 ? kr(mP.price) : "Ingår"}</p>
+      {/* ===== Produktsida (fullskärm) ===== */}
+      {detail && (() => {
+        const p = detail;
+        const related = products.filter((x: any) => x.id !== p.id && (x.category || "") === (p.category || "")).slice(0, 3);
+        const overQuota = quota?.unit === "kr" && p.price > 0 && p.price * dQty > quota.left;
+        const shapeName: Record<string, string> = { jacket: "Jacka", hoodie: "Hoodie", tee: "T-shirt", pants: "Byxa", beanie: "Mössa", vest: "Väst" };
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: "#0b0e13" }}>
+            <div className="fixed w-[520px] h-[520px] rounded-full blur-[110px] opacity-[0.12] -top-40 -left-32 pointer-events-none" style={{ background: brand }} />
+            <div className="relative z-10 max-w-[1000px] mx-auto px-4 sm:px-6 pt-6 pb-28">
+              {/* Toppbar */}
+              <div className="flex items-center justify-between mb-6">
+                <button onClick={() => setDetail(null)} className={GLASS + " rounded-full px-4 py-2 text-[12.5px] font-semibold hover:bg-white/10 transition-colors"}>← Tillbaka till sortimentet</button>
+                <button onClick={() => { setDetail(null); setCartOpen(true); }} className="relative rounded-full px-4 py-2 text-[12.5px] font-bold text-[#0b0e13] hover:opacity-90 transition-opacity" style={{ background: brand }}>
+                  🛒 Varukorg{cartCount > 0 && <span className="absolute -top-1.5 -right-1.5 bg-[#0b0e13] text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">{cartCount}</span>}
+                </button>
               </div>
+
+              <div className="grid lg:grid-cols-2 gap-8">
+                {/* Bild */}
+                <div>
+                  <GarmentArt p={p} className="aspect-square w-full" />
+                  <p className="text-[11px] text-white/30 mt-3 text-center">Illustration — verklig produkt kan variera i detalj</p>
+                </div>
+
+                {/* Info + köp */}
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/40 font-bold">{p.category}</p>
+                  <h1 className="grotesk text-[30px] font-semibold mt-1 leading-tight">{p.name}</h1>
+                  <p className="grotesk text-[22px] mt-2">{p.price > 0 ? kr(p.price) : quota?.unit === "plagg" ? "1 plagg ur kvoten" : "Ingår"}</p>
+
+                  {/* Storlekar */}
+                  {p.sizes?.length > 0 && (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/40 font-bold">Välj storlek</p>
+                        <button onClick={() => toast("Storleksguide: mät över bröstet och jämför med din vanliga plaggstorlek. Osäker? Ta en storlek upp för plagg som bärs över annat.")} className="text-[11.5px] text-white/45 underline hover:text-white transition-colors">Storleksguide</button>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        {p.sizes.map((s: string) => (
+                          <button key={s} onClick={() => setDSize(s)}
+                            className={"rounded-xl px-4 py-2.5 text-[13px] font-semibold border transition-colors " + (dSize === s ? "text-[#0b0e13]" : "border-white/15 text-white/70 hover:bg-white/[0.06]")}
+                            style={dSize === s ? { background: brand, borderColor: brand } : {}}>{s}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Antal + köpknappar */}
+                  <div className="mt-6 flex items-center gap-3 flex-wrap">
+                    <div className={GLASS + " flex items-center gap-2 rounded-full px-2 py-2"}>
+                      <button onClick={() => setDQty(Math.max(1, dQty - 1))} className="w-9 h-9 rounded-full hover:bg-white/10 transition-colors text-[16px]">−</button>
+                      <span className="w-6 text-center text-[15px] font-semibold">{dQty}</span>
+                      <button onClick={() => setDQty(Math.min(50, dQty + 1))} className="w-9 h-9 rounded-full hover:bg-white/10 transition-colors text-[16px]">+</button>
+                    </div>
+                    <button onClick={() => { if (addToCart(p, dSize, dQty)) { /* stanna kvar */ } }}
+                      className={GLASS + " flex-1 min-w-[150px] rounded-full py-3.5 text-[13.5px] font-bold hover:bg-white/10 transition-colors"}>Lägg i varukorg</button>
+                    <button onClick={() => { if (addToCart(p, dSize, dQty)) { setDetail(null); setCartOpen(true); } }}
+                      className="flex-1 min-w-[150px] rounded-full py-3.5 text-[13.5px] font-bold text-[#0b0e13] hover:opacity-90 transition-opacity" style={{ background: brand }}>Köp direkt</button>
+                  </div>
+                  {overQuota && <p className="text-[12px] text-rose-300 mt-2.5">Obs: överstiger din kvarvarande kvot ({quota.left} {quota.unit}).</p>}
+
+                  {/* Infolista */}
+                  <div className={GLASS + " mt-7 p-5 space-y-3"} style={{ borderRadius: "var(--radius)" }}>
+                    {[
+                      ["Kategori", p.category || "—"],
+                      ["Typ", shapeName[p.shape] || "Plagg"],
+                      ["Storlekar", p.sizes?.length ? p.sizes.join(", ") : "Enhetsstorlek"],
+                      ["Tryck", "Er logotyp trycks/broderas av OA:s tryckeri innan leverans"],
+                      ["Leverans", "Levereras normalt inom 3–5 arbetsdagar efter godkänd order"],
+                      ["Beställningssätt", model === "free" ? "Går direkt till behandling" : model === "attest" ? "Godkänns av chef först" : "Dras från din årskvot"],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-4 text-[12.5px]">
+                        <span className="text-white/40 flex-shrink-0">{k}</span>
+                        <span className="text-white/80 text-right">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[12px] text-white/45 mt-4 leading-relaxed">{p.name} ingår i {t.name}s ordinarie profilsortiment. Beställer du fel storlek hör du av dig till er butiksansvarige för byte.</p>
+                </div>
+              </div>
+
+              {/* Liknande */}
+              {related.length > 0 && (
+                <div className="mt-14">
+                  <h2 className="grotesk text-[18px] font-semibold mb-4">Liknande i {p.category}</h2>
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    {related.map((r: any) => (
+                      <div key={r.id} onClick={() => openDetail(r)} className={GLASS + " p-3.5 group cursor-pointer hover:bg-white/[0.09] hover:-translate-y-1 transition-all duration-300"} style={{ borderRadius: "var(--radius)" }}>
+                        <GarmentArt p={r} className="aspect-[4/3] mb-3 group-hover:scale-[1.03] transition-transform duration-500" />
+                        <p className="grotesk font-semibold text-[14px] leading-tight">{r.name}</p>
+                        <p className="grotesk text-[13px] mt-1">{r.price > 0 ? kr(r.price) : "Ingår"}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            {mP.sizes?.length > 0 && (<>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/40 font-bold mb-2">Storlek</p>
-              <div className="flex gap-2 flex-wrap mb-5">
-                {mP.sizes.map((s: string) => (
-                  <button key={s} onClick={() => setMSize(s)}
-                    className={"rounded-xl px-4 py-2 text-[12.5px] font-semibold border transition-colors " + (mSize === s ? "text-[#0b0e13]" : "border-white/15 text-white/65 hover:bg-white/[0.06]")}
-                    style={mSize === s ? { background: brand, borderColor: brand } : {}}>{s}</button>
-                ))}
-              </div>
-            </>)}
-            <div className="flex items-center justify-between gap-3">
-              <div className={GLASS + " flex items-center gap-2 rounded-full px-2 py-1.5"}>
-                <button onClick={() => setMQty(Math.max(1, mQty - 1))} className="w-8 h-8 rounded-full hover:bg-white/10 transition-colors">−</button>
-                <span className="w-5 text-center text-[14px] font-semibold">{mQty}</span>
-                <button onClick={() => setMQty(Math.min(10, mQty + 1))} className="w-8 h-8 rounded-full hover:bg-white/10 transition-colors">+</button>
-              </div>
-              <button onClick={placeOrder} disabled={placing}
-                className="flex-1 rounded-full py-3.5 text-[13.5px] font-bold text-[#0b0e13] hover:opacity-90 transition-opacity disabled:opacity-50" style={{ background: brand }}>
-                {placing ? "Skickar…" : "Beställ"}
-              </button>
+          </div>
+        );
+      })()}
+
+      {/* ===== Varukorgslåda ===== */}
+      {cartOpen && (
+        <div className="fixed inset-0 z-[55]">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setCartOpen(false)} />
+          <div className="absolute right-0 top-0 bottom-0 w-[min(420px,100vw)] flex flex-col border-l border-white/10" style={{ background: "rgba(16,20,28,.96)" }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+              <p className="grotesk font-semibold text-[16px]">Varukorg {cartCount > 0 && <span className="text-white/40 font-normal text-[13px]">· {cartCount} st</span>}</p>
+              <button onClick={() => setCartOpen(false)} className="w-8 h-8 rounded-full hover:bg-white/10 transition-colors text-white/60">✕</button>
             </div>
-            <p className="text-[11px] text-white/35 mt-3 text-center">
-              {model === "free" ? "Skickas direkt till behandling." : model === "attest" ? "Går till attest — du meddelas via mejl." : "Dras från din årskvot automatiskt."}
-            </p>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              {cart.length === 0 && <div className="text-center text-white/40 text-[13px] py-16">Varukorgen är tom.<br />Lägg till plagg från sortimentet.</div>}
+              {cart.map((l, i) => (
+                <div key={l.product.id + l.size} className={GLASS + " p-3 flex gap-3 items-center"} style={{ borderRadius: "var(--radius)" }}>
+                  <GarmentArt p={l.product} className="w-14 h-14 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="grotesk font-semibold text-[13.5px] leading-tight truncate">{l.product.name}</p>
+                    <p className="text-[11.5px] text-white/40">{l.size ? "Storlek " + l.size + " · " : ""}{l.product.price > 0 ? kr(l.product.price) : "Ingår"}</p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex items-center gap-1.5 bg-white/[0.06] rounded-full px-1.5 py-1">
+                        <button onClick={() => setLineQty(i, -1)} className="w-6 h-6 rounded-full hover:bg-white/10 transition-colors">−</button>
+                        <span className="w-4 text-center text-[12.5px] font-semibold">{l.qty}</span>
+                        <button onClick={() => setLineQty(i, 1)} className="w-6 h-6 rounded-full hover:bg-white/10 transition-colors">+</button>
+                      </div>
+                      <button onClick={() => removeLine(i)} className="text-[11.5px] text-white/40 hover:text-rose-300 transition-colors">Ta bort</button>
+                    </div>
+                  </div>
+                  {l.product.price > 0 && <span className="grotesk text-[13px] self-start">{kr(l.product.price * l.qty)}</span>}
+                </div>
+              ))}
+            </div>
+
+            {cart.length > 0 && (
+              <div className="border-t border-white/10 px-5 py-4 space-y-3">
+                <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Meddelande till ordern (valfritt)…"
+                  className="w-full bg-white/[0.06] border border-white/15 rounded-xl px-3.5 py-2.5 text-[12.5px] focus:outline-none focus:border-white/40 resize-none" rows={2} />
+                <div className="flex items-center justify-between text-[14px]">
+                  <span className="text-white/50">{quota?.unit === "plagg" ? "Antal plagg" : "Totalt"}</span>
+                  <span className="grotesk font-semibold text-[16px]">{quota?.unit === "plagg" ? cartItems + " plagg" : kr(cartTotal)}</span>
+                </div>
+                {quota && (
+                  <p className="text-[11.5px] text-white/40">Efter köp: {quota.unit === "plagg" ? Math.max(0, quota.left - cartItems) + " plagg" : kr(Math.max(0, quota.left - cartTotal))} kvar av kvoten</p>
+                )}
+                <button onClick={checkout} disabled={placing}
+                  className="w-full rounded-full py-3.5 text-[14px] font-bold text-[#0b0e13] hover:opacity-90 transition-opacity disabled:opacity-50" style={{ background: brand }}>
+                  {placing ? "Skickar…" : model === "attest" ? "Skicka för attest" : "Slutför beställning"}
+                </button>
+                <p className="text-[11px] text-white/35 text-center">
+                  {model === "free" ? "Skickas direkt till behandling." : model === "attest" ? "Ordrar godkänns av chef — du meddelas via mejl." : "Dras från din årskvot automatiskt."}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
