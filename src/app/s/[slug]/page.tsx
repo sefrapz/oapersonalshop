@@ -177,10 +177,10 @@ export default function Shop() {
 
   // ================= RENDER =================
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center text-white/40 text-[14px]">Laddar butiken…</div>
+    <div className="min-h-screen flex items-center justify-center text-white/40 text-[14px]" style={{ background: "#0b0e13" }}>Laddar butiken…</div>
   );
   if (!t) return (
-    <div className="min-h-screen flex items-center justify-center px-6 text-center">
+    <div className="min-h-screen flex items-center justify-center px-6 text-center text-white" style={{ background: "#0b0e13" }}>
       <div><h1 className="grotesk text-[26px] font-semibold">Butiken hittades inte</h1>
       <p className="text-white/45 text-[13.5px] mt-2">Kontrollera adressen — eller kontakta er butiksansvarige.</p></div>
     </div>
@@ -191,7 +191,8 @@ export default function Shop() {
 
   // ===== Utloggat läge: inloggning =====
   if (!cfg.loggedIn) return (
-    <div className="min-h-screen relative overflow-hidden" style={vars}>
+    <div className="min-h-screen relative overflow-hidden text-white" style={vars}>
+      <div className="fixed inset-0 -z-10" style={{ background: "#0b0e13" }} />
       <div className="fixed w-[520px] h-[520px] rounded-full blur-[110px] opacity-[0.16] -top-40 -left-32 pointer-events-none" style={{ background: brand }} />
       <div className="relative z-10 min-h-screen flex items-center justify-center px-5">
         <div className={GLASS + " w-full max-w-[400px] p-8"} style={{ borderRadius: "calc(var(--radius) + 8px)" }}>
@@ -230,7 +231,8 @@ export default function Shop() {
       : "Kvotmodell — du har en egen årspott. Systemet räknar automatiskt.";
 
   return (
-    <div className="min-h-screen relative" style={vars}>
+    <div className="min-h-screen relative text-white" style={vars}>
+      <div className="fixed inset-0 -z-10" style={{ background: "#0b0e13" }} />
       <div className="fixed w-[520px] h-[520px] rounded-full blur-[110px] opacity-[0.14] -top-40 -left-32 pointer-events-none" style={{ background: brand }} />
       <div className="fixed w-[420px] h-[420px] rounded-full blur-[110px] opacity-[0.10] top-1/2 -right-32 pointer-events-none" style={{ background: brand }} />
 
