@@ -53,7 +53,10 @@ export default function Shop() {
   const [aiMsgs, setAiMsgs] = useState<{ role: string; text: string }[]>([]);
   const [aiInput, setAiInput] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
-  const [filter, setFilter] = useState("");
+  const [cat, setCat] = useState("Alla");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"pop" | "namn" | "pris">("pop");
+  const [favOnly, setFavOnly] = useState(false);
 
   const t = cfg?.tenant;
   const brand = t?.brand_color || "#7e22ce";
@@ -102,11 +105,25 @@ export default function Shop() {
   }
 
   const products = cfg?.products || [];
+  const categories = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of products) counts[p.category || "Övrigt"] = (counts[p.category || "Övrigt"] || 0) + 1;
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [products]);
   const shown = useMemo(() => {
-    if (!filter) return products;
-    const f = filter.toLowerCase();
-    return products.filter((p: any) => (p.name + " " + p.category).toLowerCase().includes(f));
-  }, [products, filter]);
+    let list = products.slice();
+    if (cat !== "Alla") list = list.filter((p: any) => (p.category || "Övrigt") === cat);
+    if (favOnly) list = list.filter((p: any) => favs.has(p.id));
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      list = list.filter((p: any) => (p.name + " " + p.category).toLowerCase().includes(q));
+    }
+    if (sort === "namn") list.sort((a: any, b: any) => a.name.localeCompare(b.name, "sv"));
+    else if (sort === "pris") list.sort((a: any, b: any) => a.price - b.price);
+    else list.sort((a: any, b: any) => (a.sort ?? 100) - (b.sort ?? 100));
+    return list;
+  }, [products, cat, favOnly, query, sort, favs]);
+  const filtered = cat !== "Alla" || favOnly || query.trim() !== "";
 
   const quota = cfg?.quota; // { left, unit, total } | null
   const quotaPct = quota ? Math.max(0, Math.min(1, quota.left / quota.total)) : 0;
@@ -156,7 +173,7 @@ export default function Shop() {
     setAiInput(""); setAiOpen(true); setAiBusy(true);
     setAiMsgs((m) => [...m, { role: "user", text: msg }]);
     // klientside-magi som i demon: nyckelord filtrerar sortimentet direkt
-    if (/vinter/i.test(msg)) setFilter("jack");
+    if (/vinter/i.test(msg)) { setCat("Alla"); setFavOnly(false); setQuery("vinter"); }
     const j = await fetch("/api/shop/assistant", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: msg }),
@@ -337,22 +354,64 @@ export default function Shop() {
             {/* Sortiment */}
             <div id="sortiment">
               <div className="flex items-end justify-between mb-4 flex-wrap gap-2">
-                <h2 className="grotesk text-[19px] font-semibold">Ert sortiment {filter && <span className="text-white/35 text-[12.5px] font-normal">· filtrerat ✦</span>}</h2>
-                {filter && <button onClick={() => setFilter("")} className="text-[12px] text-white/50 underline hover:text-white transition-colors">Visa allt</button>}
+                <h2 className="grotesk text-[19px] font-semibold">Ert sortiment <span className="text-white/35 text-[13px] font-normal">· {shown.length} {shown.length === 1 ? "produkt" : "produkter"}</span></h2>
+                <div className="relative">
+                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Sök i sortimentet…"
+                    className={GLASS + " rounded-full pl-9 pr-4 py-2 text-[12.5px] w-[190px] focus:w-[230px] focus:outline-none focus:border-white/30 transition-all"} />
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/35 text-[12px]">⌕</span>
+                </div>
               </div>
-              {shown.length === 0 && <div className={GLASS + " p-10 text-center text-white/40 text-[13px]"} style={{ borderRadius: "var(--radius)" }}>{products.length === 0 ? "Inga produkter upplagda ännu — hör med er butiksansvarige." : "Inget matchade filtret."}</div>}
+
+              {/* Kategoriflikar */}
+              {categories.length > 0 && (
+                <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 -mx-1 px-1">
+                  <button onClick={() => setCat("Alla")}
+                    className={"rounded-full px-4 py-2 text-[12.5px] font-semibold whitespace-nowrap transition-colors " + (cat === "Alla" ? "text-[#0b0e13]" : GLASS + " text-white/60 hover:bg-white/10")}
+                    style={cat === "Alla" ? { background: brand } : {}}>Alla <span className="opacity-60">{products.length}</span></button>
+                  {categories.map(([c, n]) => (
+                    <button key={c} onClick={() => setCat(c)}
+                      className={"rounded-full px-4 py-2 text-[12.5px] font-semibold whitespace-nowrap transition-colors " + (cat === c ? "text-[#0b0e13]" : GLASS + " text-white/60 hover:bg-white/10")}
+                      style={cat === c ? { background: brand } : {}}>{c} <span className="opacity-60">{n}</span></button>
+                  ))}
+                </div>
+              )}
+
+              {/* Sekundär rad: favoritfilter + sortering */}
+              <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+                <button onClick={() => setFavOnly(!favOnly)}
+                  className={"rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-colors " + (favOnly ? "text-[#0b0e13]" : GLASS + " text-white/55 hover:bg-white/10")}
+                  style={favOnly ? { background: brand } : {}}>{favOnly ? "♥" : "♡"} Mina favoriter {favs.size > 0 && <span className="opacity-60">{favs.size}</span>}</button>
+                <div className="flex items-center gap-1.5 text-[12px]">
+                  <span className="text-white/35">Sortera:</span>
+                  {([["pop", "Populärast"], ["namn", "Namn"], ["pris", "Pris"]] as const).map(([v, l]) => (
+                    <button key={v} onClick={() => setSort(v)}
+                      className={"rounded-full px-3 py-1.5 font-semibold transition-colors " + (sort === v ? "text-white" : "text-white/40 hover:text-white/70")}
+                      style={sort === v ? { background: "rgba(255,255,255,.1)" } : {}}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              {filtered && <button onClick={() => { setCat("Alla"); setQuery(""); setFavOnly(false); }} className="text-[12px] text-white/45 underline hover:text-white transition-colors mb-3 inline-block">Rensa filter</button>}
+              {shown.length === 0 && <div className={GLASS + " p-10 text-center text-white/40 text-[13px]"} style={{ borderRadius: "var(--radius)" }}>{products.length === 0 ? "Inga produkter upplagda ännu — hör med er butiksansvarige." : favOnly ? "Du har inga favoriter i den här kategorin än — tryck på hjärtat på en produkt." : "Inget matchade — prova en annan kategori eller sökning."}</div>}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                 {shown.map((p: any) => (
-                  <div key={p.id} className={GLASS + " p-4 group hover:bg-white/[0.08] transition-colors"} style={{ borderRadius: "var(--radius)" }}>
+                  <div key={p.id} onClick={() => openModal(p)}
+                    className={GLASS + " p-3.5 group cursor-pointer hover:bg-white/[0.09] hover:border-white/20 hover:-translate-y-1 transition-all duration-300"}
+                    style={{ borderRadius: "var(--radius)" }}>
                     <div className="relative">
-                      <GarmentArt p={p} className="aspect-[4/3] mb-3 group-hover:scale-[1.02] transition-transform duration-500" />
-                      <button onClick={() => toggleFav(p.id)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/40 backdrop-blur border border-white/10 text-[13px] hover:scale-110 transition-transform">{favs.has(p.id) ? "♥" : "♡"}</button>
+                      <GarmentArt p={p} className="aspect-[4/3] mb-3 group-hover:scale-[1.03] transition-transform duration-500" />
+                      <button onClick={(e) => { e.stopPropagation(); toggleFav(p.id); }}
+                        className={"absolute top-2 right-2 w-8 h-8 rounded-full backdrop-blur border border-white/10 text-[13px] transition-all hover:scale-110 " + (favs.has(p.id) ? "bg-black/50" : "bg-black/40 opacity-0 group-hover:opacity-100")}
+                        style={favs.has(p.id) ? { color: brand } : {}}>{favs.has(p.id) ? "♥" : "♡"}</button>
+                      {p.price > 0 && quota?.unit === "kr" && p.price > quota.left && (
+                        <span className="absolute top-2 left-2 text-[9px] font-bold uppercase tracking-wider bg-black/55 backdrop-blur rounded-full px-2 py-1 text-rose-200">Över kvot</span>
+                      )}
                     </div>
-                    <p className="text-[10px] uppercase tracking-[0.18em] text-white/35 font-bold">{p.category}</p>
-                    <p className="grotesk font-semibold text-[14.5px] leading-tight">{p.name}</p>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="grotesk text-[13.5px]">{p.price > 0 ? kr(p.price) : quota?.unit === "plagg" ? "1 plagg" : "Ingår"}</span>
-                      <button onClick={() => openModal(p)} className="rounded-full px-4 py-1.5 text-[11.5px] font-bold text-[#0b0e13] hover:opacity-90 transition-opacity" style={{ background: brand }}>Beställ</button>
+                    <p className="text-[9.5px] uppercase tracking-[0.18em] text-white/35 font-bold">{p.category}</p>
+                    <p className="grotesk font-semibold text-[14.5px] leading-tight mt-0.5">{p.name}</p>
+                    {p.sizes?.length > 0 && <p className="text-[10.5px] text-white/30 mt-1">{p.sizes.length} storlekar</p>}
+                    <div className="flex items-center justify-between mt-2.5">
+                      <span className="grotesk text-[14px]">{p.price > 0 ? kr(p.price) : quota?.unit === "plagg" ? "1 plagg" : "Ingår"}</span>
+                      <span className="rounded-full px-4 py-1.5 text-[11.5px] font-bold text-[#0b0e13] group-hover:opacity-90 transition-opacity" style={{ background: brand }}>Beställ</span>
                     </div>
                   </div>
                 ))}
