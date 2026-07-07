@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
 
 export const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -8,7 +8,10 @@ export const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(
 export const token = (bytes = 24) => randomBytes(bytes).toString("hex");
 
 export function requireAdmin(req: Request): boolean {
-  return req.headers.get("x-admin-secret") === process.env.ADMIN_SECRET && !!process.env.ADMIN_SECRET;
+  const got = req.headers.get("x-admin-secret") || "";
+  const want = process.env.ADMIN_SECRET || "";
+  if (!want || got.length !== want.length) return false;
+  return timingSafeEqual(Buffer.from(got), Buffer.from(want));  // revision M2
 }
 
 // ===== Session (personal) =====

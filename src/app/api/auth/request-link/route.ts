@@ -16,7 +16,9 @@ export async function POST(req: Request) {
   if (!tenant) return Response.json({ error: "Butiken hittades inte" }, { status: 404 });
 
   const { data: staff } = await db.from("staff").select("*")
-    .eq("tenant_id", tenant.id).ilike("email", email.trim()).maybeSingle();
+    .eq("tenant_id", tenant.id)
+    .ilike("email", email.trim().replace(/([%_\\])/g, "\\$1"))  // revision H5: % och _ är wildcards i ilike
+    .maybeSingle();
 
   if (!staff) {
     console.error("MAGICLINK: ingen träff i staff för [" + email.trim() + "] på tenant " + tenant.slug);

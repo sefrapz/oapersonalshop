@@ -15,6 +15,11 @@ export async function GET(req: Request) {
   }
   await db.from("login_tokens").update({ used: true }).eq("token", t);
 
+  // Revision H3: opportunistisk städning — utgångna tokens och sessioner
+  const now = new Date().toISOString();
+  db.from("login_tokens").delete().lt("expires_at", now).then(() => {});
+  db.from("sessions").delete().lt("expires_at", now).then(() => {});
+
   const s = token();
   await db.from("sessions").insert({
     token: s, tenant_id: lt.tenant_id, staff_id: lt.staff_id,

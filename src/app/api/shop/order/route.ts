@@ -39,13 +39,23 @@ export async function POST(req: Request) {
   const total = items.reduce((s, i) => s + i.qty * i.price, 0);
   const itemCount = items.reduce((s, i) => s + i.qty, 0);
 
-  // Kvotkontroll
+  // Kvotkontroll — ATOMÄR (revision K3): kontroll + dragning i en DB-sats,
+  // så två samtidiga ordrar aldrig kan passera samma kvot.
+  let quotaDrawn = false;
   if (tenant.order_model === "quota") {
-    const q = quotaLeft(tenant, staff);
-    const need = tenant.quota_type === "items" ? itemCount : total;
-    if (need > q.left) {
+    const maxKr = tenant.quota_type === "kr" ? tenant.quota_value : -1;
+    const maxItems = tenant.quota_type === "items" ? tenant.quota_value : -1;
+    const { data: ok, error: qErr } = await db.rpc("consume_quota", {
+      p_staff_id: staff.id, p_add_kr: total, p_add_items: itemCount,
+      p_max_kr: maxKr, p_max_items: maxItems,
+    });
+    if (qErr) return Response.json({ error: "Kvotkontrollen misslyckades — försök igen." }, { status: 500 });
+    if (!ok) {
+      const q = quotaLeft(tenant, staff);
+      const need = tenant.quota_type === "items" ? itemCount : total;
       return Response.json({ error: `Kvoten räcker inte: ${q.left} ${q.unit} kvar i år, ordern kräver ${need} ${q.unit}.` }, { status: 422 });
     }
+    quotaDrawn = true;
   }
 
   // Status enligt modell
@@ -60,24 +70,19 @@ export async function POST(req: Request) {
     cost_center: String(body.costCenter || "").slice(0, 100),
     attest_token,
   }).select("id, ticket").single();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (quotaDrawn) await db.rpc("refund_quota", { p_staff_id: staff.id, p_kr: total, p_items: itemCount });
+    return Response.json({ error: error.message }, { status: 500 });
+  }
 
   await db.from("order_items").insert(items.map((i) => ({ ...i, order_id: order!.id })));
-
-  // Dra kvot direkt (fri/kvot-order går till behandling)
-  if (tenant.order_model === "quota") {
-    await db.from("staff").update({
-      used_kr: staff.used_kr + total,
-      used_items: staff.used_items + itemCount,
-    }).eq("id", staff.id);
-  }
 
   const brand = { companyName: tenant.name, color: tenant.brand_color, footerLines: tenant.footer_lines };
   const who = (staff.name || staff.email) + (body.costCenter ? " · " + body.costCenter : "");
 
   // Mejl 1: attestförfrågan ELLER ordernotis till kontaktadressen
   if (attestNow && tenant.approver_email) {
-    await resend.emails.send({
+    const { error: mailErr } = await resend.emails.send({
       from: process.env.RESEND_FROM || "OA Personalshop <shop@oasystems.se>",
       to: tenant.approver_email,
       replyTo: staff.email,
@@ -94,8 +99,9 @@ export async function POST(req: Request) {
       }),
       text: `Order #${order!.ticket} från ${who}, ${kr(total)}. Godkänn: ${APP_URL}/api/attest?token=${attest_token}&action=approve`,
     });
+    if (mailErr) console.error("ORDER: attestmejl misslyckades för #" + order!.ticket + ":", JSON.stringify(mailErr));
   } else if (tenant.contact_email) {
-    await resend.emails.send({
+    const { error: mailErr2 } = await resend.emails.send({
       from: process.env.RESEND_FROM || "OA Personalshop <shop@oasystems.se>",
       to: tenant.contact_email,
       replyTo: staff.email,
@@ -109,6 +115,7 @@ export async function POST(req: Request) {
       }),
       text: `Order #${order!.ticket} från ${who}. Totalt ${kr(total)}.`,
     });
+    if (mailErr2) console.error("ORDER: ordernotis misslyckades för #" + order!.ticket + ":", JSON.stringify(mailErr2));
   }
 
   return Response.json({ ok: true, ticket: order!.ticket, status });
