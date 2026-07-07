@@ -36,3 +36,14 @@ export async function DELETE(req: Request) {
   await db.from("staff").delete().eq("id", id);
   return Response.json({ ok: true });
 }
+
+// PATCH { id, role } — växla anställd/chef (chef ser attestkorgen i butiken)
+export async function PATCH(req: Request) {
+  if (!requireAdmin(req)) return Response.json({ error: "Obehörig" }, { status: 401 });
+  const b = await req.json();
+  const role = b.role === "manager" ? "manager" : "employee";
+  if (!b.id) return Response.json({ error: "id krävs" }, { status: 400 });
+  const { error } = await db.from("staff").update({ role }).eq("id", b.id);
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  return Response.json({ ok: true, role });
+}

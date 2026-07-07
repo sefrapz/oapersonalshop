@@ -8,7 +8,8 @@ export default function Admin() {
   const [authed, setAuthed] = useState(false);
   const [tenants, setTenants] = useState<any[]>([]);
   const [sel, setSel] = useState<any>(null);
-  const [tab, setTab] = useState<"install" | "produkter" | "personal" | "ordrar">("install");
+  const [tab, setTab] = useState<"dashboard" | "install" | "utseende" | "produkter" | "personal" | "ordrar">("dashboard");
+  const [stats, setStats] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [products, setProducts] = useState<any[]>([]);
   const [pForm, setPForm] = useState<any>({});
@@ -26,9 +27,20 @@ export default function Admin() {
     setTenants(j.tenants || []); setAuthed(true); setStatus("");
   }
   function pick(t: any) {
-    setSel(t); setTab("install");
+    setSel(t); setTab("dashboard");
     setForm({ ...t, footer_lines: (t.footer_lines || []).join("\n") });
-    loadProducts(t.id); loadStaff(t.id); loadOrders(t.id);
+    loadProducts(t.id); loadStaff(t.id); loadOrders(t.id); loadStats(t.id);
+  }
+  async function loadStats(id: string) { const j = await fetch(`/api/admin/stats?tenantId=${id}`, { headers: h }).then((r) => r.json()); setStats(j.error ? null : j); }
+  async function quickUpdate(patch: any) {
+    const j = await fetch("/api/admin/tenant-update", { method: "POST", headers: h, body: JSON.stringify({ id: sel.id, ...patch }) }).then((r) => r.json());
+    if (j.error) { setStatus("Fel: " + j.error); return; }
+    setSel(j.tenant); setForm({ ...j.tenant, footer_lines: (j.tenant.footer_lines || []).join("\n") });
+    setStatus("Publicerat ✓ — syns direkt i butiken"); loadTenants();
+  }
+  async function setRole(id: string, role: string) {
+    await fetch("/api/admin/staff", { method: "PATCH", headers: h, body: JSON.stringify({ id, role }) });
+    loadStaff(sel.id); setStatus(role === "manager" ? "Chefsroll satt ✓ — attestkorgen syns i butiken" : "Roll ändrad ✓");
   }
   async function loadProducts(id: string) { const j = await fetch(`/api/admin/products?tenantId=${id}`, { headers: h }).then((r) => r.json()); setProducts(j.products || []); }
   async function loadStaff(id: string) { const j = await fetch(`/api/admin/staff?tenantId=${id}`, { headers: h }).then((r) => r.json()); setStaff(j.staff || []); }
@@ -100,12 +112,129 @@ export default function Admin() {
         <>
           {sel && (
             <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-              {(["install", "produkter", "personal", "ordrar"] as const).map((t) => (
+              {(["dashboard", "install", "utseende", "produkter", "personal", "ordrar"] as const).map((t) => (
                 <button key={t} style={S.tab(tab === t)} onClick={() => setTab(t)}>
-                  {{ install: "Inställningar", produkter: `Produkter (${products.length})`, personal: `Personal (${staff.length})`, ordrar: `Ordrar (${orders.length})` }[t]}
+                  {{ dashboard: "📊 Dashboard", install: "Inställningar", utseende: "🎨 Utseende", produkter: `Produkter (${products.length})`, personal: `Personal (${staff.length})`, ordrar: `Ordrar (${orders.length})` }[t]}
                 </button>
               ))}
               <a href={`/s/${sel.slug}`} target="_blank" style={{ ...S.ghost, textDecoration: "none", color: "#333", lineHeight: "18px" }}>Öppna butiken ↗</a>
+            </div>
+          )}
+
+          {/* ===== Dashboard (riktig data ur ordrarna) ===== */}
+          {sel && tab === "dashboard" && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginBottom: 16 }}>
+                {[
+                  ["Aktiva beställare", stats ? `${stats.kpi.activeStaff} av ${stats.kpi.totalStaff}` : "—", "senaste 84 d"],
+                  ["Ordrar denna månad", stats ? String(stats.kpi.monthOrders) : "—", stats ? kr(stats.kpi.monthValue) : ""],
+                  ["Väntar attest", stats ? String(stats.kpi.pending) : "—", stats && stats.kpi.pending > 0 ? "kräver chef" : "allt klart ✓"],
+                  ["Kvotförbrukning", stats && stats.kpi.budgetPct !== null ? stats.kpi.budgetPct + " %" : "—", "av total årspott"],
+                ].map(([t, v, d]: any) => (
+                  <div key={t} style={S.card}>
+                    <span style={S.label}>{t}</span>
+                    <p style={{ fontSize: 24, fontWeight: 700, margin: "2px 0 2px" }}>{v}</p>
+                    <p style={{ fontSize: 11.5, color: "#888", margin: 0 }}>{d}</p>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
+                <div style={S.card}>
+                  <span style={S.label}>Ordrar per vecka (12 v)</span>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 5, height: 110, marginTop: 8 }}>
+                    {(stats?.weeks || Array(12).fill(0)).map((v: number, i: number) => {
+                      const max = Math.max(1, ...(stats?.weeks || [1]));
+                      return <div key={i} title={String(v)} style={{ flex: 1, height: Math.max(3, (v / max) * 100) + "px", borderRadius: "6px 6px 0 0", background: i === 11 ? sel.brand_color : "rgba(0,0,0,.15)" }} />;
+                    })}
+                  </div>
+                </div>
+                <div style={S.card}>
+                  <span style={S.label}>Topprodukter</span>
+                  {(stats?.top || []).map(([n, c]: any) => (
+                    <div key={n} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderBottom: "1px solid rgba(0,0,0,.05)" }}>
+                      <span>{n}</span><strong>{c} st</strong>
+                    </div>
+                  ))}
+                  {(!stats || stats.top.length === 0) && <p style={{ fontSize: 12.5, color: "#888" }}>Inga ordrar än.</p>}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16 }}>
+                <div style={S.card}>
+                  <span style={S.label}>Populära storlekar</span>
+                  {(stats?.sizes || []).map(([sz, p]: any) => (
+                    <div key={sz} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, padding: "5px 0" }}>
+                      <span style={{ width: 32, color: "#666" }}>{sz}</span>
+                      <div style={{ flex: 1, height: 6, borderRadius: 99, background: "rgba(0,0,0,.08)", overflow: "hidden" }}>
+                        <div style={{ width: p + "%", height: "100%", borderRadius: 99, background: sel.brand_color }} />
+                      </div>
+                      <span style={{ width: 36, textAlign: "right", color: "#888" }}>{p} %</span>
+                    </div>
+                  ))}
+                  {(!stats || stats.sizes.length === 0) && <p style={{ fontSize: 12.5, color: "#888" }}>Inga storleksdata än.</p>}
+                </div>
+                <div style={S.card}>
+                  <span style={S.label}>Senaste aktivitet</span>
+                  {(stats?.activity || []).map((a: any) => (
+                    <div key={a.ticket + a.when} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, padding: "6px 0", borderBottom: "1px solid rgba(0,0,0,.05)" }}>
+                      <span>#{a.ticket} · {a.who}</span>
+                      <span style={{ color: "#888", whiteSpace: "nowrap" }}>{kr(a.total)} · {a.status}</span>
+                    </div>
+                  ))}
+                  {(!stats || stats.activity.length === 0) && <p style={{ fontSize: 12.5, color: "#888" }}>Ingen aktivitet än.</p>}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ===== Utseende — theme builder, publiceras direkt ===== */}
+          {sel && tab === "utseende" && (
+            <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 16 }}>
+              <div style={S.card}>
+                <span style={S.label}>Primärfärg</span>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  {["#7e22ce", "#f59e0b", "#38bdf8", "#34d399", "#f472b6", "#0f172a"].map((c) => (
+                    <button key={c} onClick={() => quickUpdate({ brand_color: c })} title={c}
+                      style={{ width: 34, height: 34, borderRadius: 99, background: c, border: sel.brand_color === c ? "3px solid #111" : "2px solid rgba(0,0,0,.15)", cursor: "pointer" }} />
+                  ))}
+                </div>
+                <span style={S.label}>Egen hex</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input style={{ ...S.inp, marginBottom: 0 }} value={form.brand_color || ""} onChange={(e) => setForm({ ...form, brand_color: e.target.value })} placeholder="#1d4ed8" />
+                  <button style={S.ghost} onClick={() => quickUpdate({ brand_color: form.brand_color })}>Använd</button>
+                </div>
+                <div style={{ marginTop: 16 }}>
+                  <span style={S.label}>Hörnradie: {form.radius ?? sel.radius ?? 20}px</span>
+                  <input type="range" min={4} max={32} value={form.radius ?? sel.radius ?? 20} style={{ width: "100%" }}
+                    onChange={(e) => setForm({ ...form, radius: e.target.value })}
+                    onMouseUp={() => quickUpdate({ radius: form.radius })}
+                    onTouchEnd={() => quickUpdate({ radius: form.radius })} />
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <span style={S.label}>Beställningsmodell</span>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {[["free", "Fri"], ["attest", "Attest"], ["quota", "Kvot"]].map(([v, l]) => (
+                      <button key={v} style={S.tab(sel.order_model === v)} onClick={() => quickUpdate({ order_model: v })}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <p style={{ fontSize: 11, color: "#999", marginTop: 14 }}>Allt här publiceras direkt — personalen ser nya utseendet vid nästa sidladdning.</p>
+              </div>
+              <div style={S.card}>
+                <span style={S.label}>Förhandsvisning</span>
+                <div style={{ background: "#0b0e13", borderRadius: 18, padding: 22, marginTop: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                    <span style={{ width: 36, height: 36, borderRadius: 10, background: form.brand_color || sel.brand_color, color: "#0b0e13", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>
+                      {(sel.name || "AB").split(/\s+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
+                    </span>
+                    <span style={{ color: "#fff", fontWeight: 600, fontSize: 14.5 }}>{sel.name}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <span style={{ background: form.brand_color || sel.brand_color, color: "#0b0e13", borderRadius: 99, padding: "8px 16px", fontSize: 12, fontWeight: 700 }}>Beställ nytt</span>
+                    <span style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", color: "#fff", borderRadius: Number(form.radius ?? sel.radius ?? 20), padding: "8px 16px", fontSize: 12, fontWeight: 600 }}>Kort med er radie</span>
+                  </div>
+                </div>
+                <a href={`/s/${sel.slug}`} target="_blank" style={{ ...S.ghost, display: "inline-block", marginTop: 12, textDecoration: "none", color: "#333" }}>Öppna butiken och se live ↗</a>
+              </div>
             </div>
           )}
 
@@ -166,7 +295,13 @@ export default function Admin() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: 12 }}>
                   <input style={S.inp} placeholder="Storlekar: S,M,L,XL" value={pForm.sizes || ""} onChange={(e) => setPForm({ ...pForm, sizes: e.target.value })} />
                   <input style={S.inp} placeholder="Bild-URL (valfri)" value={pForm.image_url || ""} onChange={(e) => setPForm({ ...pForm, image_url: e.target.value })} />
-                  <input style={S.inp} placeholder="Färg utan bild: #334155" value={pForm.color || ""} onChange={(e) => setPForm({ ...pForm, color: e.target.value })} />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input style={{ ...S.inp, flex: 1 }} placeholder="Färg: #334155" value={pForm.color || ""} onChange={(e) => setPForm({ ...pForm, color: e.target.value })} />
+                    <select style={{ ...S.inp, flex: 1 }} value={pForm.shape || "tee"} onChange={(e) => setPForm({ ...pForm, shape: e.target.value })}>
+                      <option value="jacket">Jacka</option><option value="hoodie">Hoodie</option><option value="tee">T-shirt</option>
+                      <option value="pants">Byxor</option><option value="beanie">Mössa</option><option value="vest">Väst</option>
+                    </select>
+                  </div>
                 </div>
                 <button style={S.btn} onClick={saveProduct}>{pForm.id ? "Spara produkt" : "Lägg till produkt"}</button>
                 {pForm.id && <button style={{ ...S.ghost, marginLeft: 8 }} onClick={() => setPForm({})}>Avbryt</button>}
@@ -198,6 +333,10 @@ export default function Admin() {
                   <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid rgba(0,0,0,.06)", fontSize: 13.5 }}>
                     <span style={{ flex: 1 }}><strong>{s.name || "—"}</strong> <span style={{ color: "#888" }}>{s.email}</span></span>
                     {sel.order_model === "quota" && <span style={{ fontSize: 12, color: "#666" }}>Använt: {sel.quota_type === "items" ? s.used_items + " plagg" : kr(s.used_kr)}</span>}
+                    <button style={{ ...S.ghost, background: s.role === "manager" ? "#7e22ce" : "#fff", color: s.role === "manager" ? "#fff" : "#333" }}
+                      onClick={() => setRole(s.id, s.role === "manager" ? "employee" : "manager")}>
+                      {s.role === "manager" ? "✓ Chef" : "Gör till chef"}
+                    </button>
                     <button style={{ ...S.ghost, color: "#b91c1c" }} onClick={() => delStaff(s.id)}>Ta bort</button>
                   </div>
                 ))}

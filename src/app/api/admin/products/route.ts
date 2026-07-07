@@ -17,6 +17,7 @@ export async function POST(req: Request) {
     price: Math.max(0, parseInt(b.price) || 0),
     sizes: String(b.sizes || "").split(",").map((s: string) => s.trim()).filter(Boolean),
     image_url: b.image_url || "", color: b.color || "#334155",
+    shape: ["jacket","hoodie","tee","pants","beanie","vest"].includes(b.shape) ? b.shape : "tee",
     active: b.active !== false, sort: parseInt(b.sort) || 100,
   };
   if (!row.tenant_id || !row.name) return Response.json({ error: "tenantId och namn krävs" }, { status: 400 });

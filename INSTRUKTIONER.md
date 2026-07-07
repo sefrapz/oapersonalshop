@@ -1,24 +1,42 @@
-# OA Personalshop — senaste versionen (inkl. säkerhetsfix K1/K3/H1/H3/H5/M1/M2)
+# OA Personalshop v3 — "demon fast på riktigt"
 
-Detta är HELA projektet i senaste skick. Två sätt att använda:
+Butiken har nu exakt samma design och funktioner som säljdemon, men allt kör mot riktig data:
+kvotring, plaggkonst, favoriter, ordertidslinje, chefens attestkorg I APPEN, AI-assistent,
+admin-dashboard med riktiga siffror och theme builder som publicerar direkt.
 
-## A) Om ditt repo redan är deployat (ditt läge)
-1. Kör supabase/uppdatering1.sql i Supabase SQL Editor (personalshop-projektet!
-   inte oachat) — skapar consume_quota/refund_quota + index + RLS. Idempotent,
-   säker att köra även om den körts förr.
-2. Packa upp zipen, kopiera in src/ över repots src/ (skriv över allt).
-   OBS: repo-roten är C:\Users\Pat\Downloads\oa-personalshop\oa-personalshop
-   (dubbelmappen!) — där package.json ligger.
-3. git add . && git commit -m "Säkerhetsfix: attest POST, atomär kvot, logout" && git push
+## Deploy (befintligt repo — 3 steg)
 
-## B) Om du sätter upp från noll någon gång
-1. Nytt Supabase-projekt → kör schema.sql, sedan uppdatering1.sql
-2. Vercel: importera repot, env-variabler enligt README (SUPABASE_URL,
-   SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY, RESEND_FROM, ADMIN_SECRET, APP_URL)
+1. **SQL** — kör i Supabase (PERSONALSHOP-projektet!) → SQL Editor:
+   - `supabase/uppdatering1.sql` (om du inte redan körde den vid säkerhetsfixen)
+   - `supabase/uppdatering2.sql` (roller, plaggformer, hörnradie)
 
-## Testa efter deploy (3 min)
-1. Lägg en order som kräver attest → öppna attestmejlets länk
-   → ska visa BEKRÄFTELSESIDA med knapp (inte godkänna direkt) → klicka → klart
-2. "Logga ut"-knappen i butikshuvudet → ska kasta ut dig till inloggningen
-3. Kvottest: två snabba ordrar som tillsammans överskrider kvoten
-   → den andra ska nekas med kvotmeddelande
+2. **Miljövariabel (valfri men rekommenderad)** — Vercel → Settings → Environment Variables:
+   - `ANTHROPIC_API_KEY` = din Anthropic-nyckel → AI-assistenten svarar med Claude Haiku
+     (superbilligt: ~1 öre per fråga). Utan nyckel svarar en inbyggd deterministisk fallback
+     med samma riktiga data. Glöm inte **Redeploy** efter att variabeln lagts till.
+
+3. **Koden** — kör `personalshop-v3.ps1` där repot ligger (skriver filerna), eller kopiera
+   `src/` + `supabase/` från zippen över repo-roten (OBS dubbelmappen oa-personalshop\oa-personalshop). Sedan:
+   ```
+   git add -A && git commit -m "v3: butik i demoparitet + attestkorg + AI + dashboard" && git push
+   ```
+
+## Så testar du (5 min)
+
+1. **Chefsroll:** /admin → välj kund → Personal → "Gör till chef" på dig själv.
+2. **Attest i appen:** sätt modellen till Attest (Utseende-fliken) → logga in i butiken som
+   vanlig anställd → beställ → logga in som chefen → ✅ Attest-fliken har en badge → Godkänn.
+   Beställaren får mejl, tidslinjen hoppar till "Tryck".
+3. **Theme builder:** Utseende-fliken → byt färg/radie → öppna butiken → nya utseendet live.
+4. **AI:** klicka ✦ Assistent i butiken → "vad finns kvar av min kvot?" → svar med riktiga siffror.
+5. **Dashboard:** /admin → Dashboard visar riktiga KPI:er, veckostaplar, topprodukter, storlekar.
+
+## Ärliga noter
+
+- **Cart-drawern är borta** — demons direktorderflöde (en produkt per order) ersätter den,
+  precis som du bad om. Vill du ha flervaruordrar tillbaka säger du till.
+- **Tidslinjens "Klar"** tänds när du klickar "Markera klar" på ordern i /admin (status ready).
+- **Dashboarden** ligger i din superadmin per vald kund — inte ett separat företagsinlogg (kan byggas senare).
+- Kvoten är fortsatt **atomär på servern** (säkerhetsfixen) — klientkollen är bara trevlig UX.
+- Attestbeslut går genom EN delad kodväg (`src/lib/attest.ts`) oavsett om chefen klickar i
+  mejlet eller i appen — samma mejl, samma logik.

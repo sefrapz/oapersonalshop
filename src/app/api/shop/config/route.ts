@@ -21,9 +21,9 @@ export async function GET(req: Request) {
   const q = quotaLeft(tenant, me.staff);
 
   return Response.json({
-    tenant: { ...pub, attest_threshold: tenant.attest_threshold, quota_type: tenant.quota_type, quota_value: tenant.quota_value },
+    tenant: { ...pub, radius: tenant.radius ?? 20, attest_threshold: tenant.attest_threshold, quota_type: tenant.quota_type, quota_value: tenant.quota_value },
     loggedIn: true,
-    me: { name: me.staff.name, email: me.staff.email },
+    me: { name: me.staff.name, email: me.staff.email, role: me.staff.role || "employee" },
     quota: tenant.order_model === "quota" ? { left: q.left, unit: q.unit, total: tenant.quota_value } : null,
     products: products || [],
   });
